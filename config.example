@@ -1,0 +1,19 @@
+# Copy to ~/.config/aerospace-gaps/config and edit.
+# Sourced as shell; environment variables take precedence over anything here.
+
+# outer.top when an external display is attached.
+AEROSPACE_GAP_DOCKED=40
+
+# outer.top when it is not.
+AEROSPACE_GAP_NATIVE=10
+
+# Which gap key to rewrite.
+#AEROSPACE_GAP_KEY=outer.top
+
+# Where your AeroSpace config lives.
+#AEROSPACE_CONFIG="$HOME/.config/aerospace/aerospace.toml"
+
+# Optional case-insensitive regex identifying your external display by name.
+# Leave unset to treat any non-Apple panel as external. Run `aerospace-gaps
+# status` to see the names AeroSpace reports.
+#AEROSPACE_DOCKED_MONITOR='ultragear|u2720q'

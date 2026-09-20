@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# aerospace-gaps — switch AeroSpace's outer.top gap between docked and native layouts.
+# https://github.com/phasewalk1/aerospace-gaps
+#
+# Usage:
+#   aerospace-gaps            auto-detect from attached monitors
+#   aerospace-gaps docked     force the external-display value
+#   aerospace-gaps native     force the built-in-display value
+#   aerospace-gaps toggle     flip to the other value
+#   aerospace-gaps status     print current/detected values, change nothing
+#   aerospace-gaps --version  print the version
+#
+# Configuration, in order of precedence: environment > config file > defaults.
+# Config file: ${XDG_CONFIG_HOME:-~/.config}/aerospace-gaps/config (shell syntax)
+#
+#   AEROSPACE_CONFIG          path to aerospace.toml
+#   AEROSPACE_GAP_DOCKED      outer.top when an external display is attached
+#   AEROSPACE_GAP_NATIVE      outer.top when it is not
+#   AEROSPACE_DOCKED_MONITOR  case-insensitive regex matched against monitor names
+#   AEROSPACE_GAP_KEY         the gap key to rewrite (default: outer.top)
+
+set -euo pipefail
+
+VERSION=1.0.0
+
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+RC="$XDG_CONFIG_HOME/aerospace-gaps/config"
+if [[ -f $RC ]]; then
+  # shellcheck source=/dev/null
+  . "$RC"
+fi
+
+CONFIG="${AEROSPACE_CONFIG:-$XDG_CONFIG_HOME/aerospace/aerospace.toml}"
+DOCKED_TOP="${AEROSPACE_GAP_DOCKED:-40}"
+NATIVE_TOP="${AEROSPACE_GAP_NATIVE:-10}"
+DOCKED_MONITOR="${AEROSPACE_DOCKED_MONITOR:-}"
+GAP_KEY="${AEROSPACE_GAP_KEY:-outer.top}"
+
+# Monitor names AeroSpace reports for Apple's own panels. Anything else is external.
+BUILTIN_MONITOR='built-?in|color lcd|liquid retina|sidecar'
+
+die() { printf 'aerospace-gaps: %s\n' "$*" >&2; exit 1; }
+
+# Escape the gap key for use in a POSIX basic regular expression.
+key_re() { printf '%s' "$GAP_KEY" | sed 's/[.[\*^$]/\\&/g'; }
+
+read_top() {
+  sed -n "s/^[[:space:]]*$(key_re)[[:space:]]*=[[:space:]]*\([0-9]\{1,\}\).*/\1/p" "$1" | head -n1
+}
+
+current_top() { read_top "$CONFIG"; }
+
+monitors() {
+  command -v aerospace >/dev/null || die "aerospace not found on PATH"
+  aerospace list-monitors --format '%{monitor-name}' \
+    || die "could not query monitors — is the AeroSpace app running?"
+}
+
+# AeroSpace 0.20 exposes no monitor geometry, so we match on names instead:
+# an explicit AEROSPACE_DOCKED_MONITOR regex if set, otherwise any panel that
+# is not a recognized built-in one.
+detect_mode() {
+  local names
+  names=$(monitors)
+  if [[ -n $DOCKED_MONITOR ]]; then
+    if grep -Eiq "$DOCKED_MONITOR" <<<"$names"; then echo docked; else echo native; fi
+  elif grep -Eiv "$BUILTIN_MONITOR" <<<"$names" | grep -q '[^[:space:]]'; then
+    echo docked
+  else
+    echo native
+  fi
+}
+
+set_top() {
+  local want=$1 have tmp
+  have=$(current_top)
+  [[ -n $have ]] || die "no '$GAP_KEY = <number>' line found in $CONFIG"
+
+  if [[ $have == "$want" ]]; then
+    echo "$GAP_KEY already $want — nothing to do"
+    return 0
+  fi
+
+  tmp=$(mktemp "${TMPDIR:-/tmp}/aerospace-gaps.XXXXXX")
+  # shellcheck disable=SC2064
+  trap "rm -f '$tmp'" RETURN
+  sed "s/^\([[:space:]]*$(key_re)[[:space:]]*=[[:space:]]*\)[0-9]\{1,\}/\1$want/" "$CONFIG" >"$tmp"
+  [[ $(read_top "$tmp") == "$want" ]] || die "rewrite produced no change; $CONFIG left untouched"
+  # Copy contents rather than mv, to preserve the file's inode and permissions.
+  cat "$tmp" >"$CONFIG"
+
+  if [[ -z ${AEROSPACE_GAPS_NO_RELOAD:-} ]]; then
+    aerospace reload-config
+    echo "$GAP_KEY $have -> $want (config reloaded)"
+  else
+    echo "$GAP_KEY $have -> $want"
+  fi
+}
+
+case "${1:-auto}" in
+  -v|--version|-h|--help|help) ;;  # these need no config
+  *) [[ -f $CONFIG ]] || die "no AeroSpace config at $CONFIG" ;;
+esac
+
+case "${1:-auto}" in
+  auto)
+    mode=$(detect_mode)
+    echo "detected: $mode"
+    if [[ $mode == docked ]]; then set_top "$DOCKED_TOP"; else set_top "$NATIVE_TOP"; fi ;;
+  docked) set_top "$DOCKED_TOP" ;;
+  native) set_top "$NATIVE_TOP" ;;
+  toggle)
+    if [[ $(current_top) == "$DOCKED_TOP" ]]; then set_top "$NATIVE_TOP"; else set_top "$DOCKED_TOP"; fi ;;
+  status)
+    printf 'config:    %s\n' "$CONFIG"
+    printf '%-10s %s (docked=%s native=%s)\n' "$GAP_KEY:" "$(current_top)" "$DOCKED_TOP" "$NATIVE_TOP"
+    printf 'monitors:  %s\n' "$(monitors | paste -sd, -)"
+    printf 'detected:  %s\n' "$(detect_mode)" ;;
+  -v|--version) echo "aerospace-gaps $VERSION" ;;
+  -h|--help|help) sed -n '2,25p' "$0" | sed 's/^#\{1,\} \{0,1\}//' ;;
+  *) die "unknown command '$1' (try: auto, docked, native, toggle, status)" ;;
+esac
