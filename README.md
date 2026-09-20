@@ -38,30 +38,56 @@ config:    /Users/you/.config/aerospace/aerospace.toml
 outer.top: 40 (docked=40 native=10)
 monitors:  LG ULTRAGEAR
 detected:  docked
+from toml: docked native
 ```
 
 ## Configuration
 
-Defaults live in `~/.config/aerospace-gaps/config`, which is sourced as shell. Every value can also be overridden per-invocation as an environment variable.
+The best place to put your gap values is your `aerospace.toml` itself, as comments. AeroSpace ignores them, `aerospace-gaps` reads them, and your settings travel with the dotfile they describe — no second config file, no dependencies.
 
-```sh
-AEROSPACE_GAP_DOCKED=40          # outer.top with an external display attached
-AEROSPACE_GAP_NATIVE=10          # outer.top without one
-AEROSPACE_GAP_KEY=outer.top      # the gap key to rewrite
-AEROSPACE_CONFIG=~/.config/aerospace/aerospace.toml
-AEROSPACE_DOCKED_MONITOR=        # optional regex, see below
+```toml
+[gaps]
+# aerospace-gaps: docked  = 40
+# aerospace-gaps: native  = 10
+outer.top    = 40
 ```
 
-See [`config.example`](config.example).
+One directive per line, anywhere in the file. The value is the rest of the line, so regexes may contain spaces and pipes. Whitespace around `#`, the name and the `=` is optional. If a name appears twice, the first wins.
+
+| Directive | Meaning | Default |
+| --- | --- | --- |
+| `docked` | Gap value when an external display is attached | `40` |
+| `native` | Gap value when it is not | `10` |
+| `key` | Which gap key to rewrite | `outer.top` |
+| `monitor` | Case-insensitive regex naming your external display | *(see below)* |
+
+`docked` and `native` must be whole numbers and `key` must be a bare TOML key, or the run aborts naming the offending value. Directive values are only ever compared and substituted, never evaluated as shell.
+
+### Other places to set values
+
+Precedence is **environment > `aerospace.toml` directives > config file > defaults**.
+
+A `~/.config/aerospace-gaps/config` file (shell syntax, see [`config.example`](config.example)) is still supported, and is the only way to point at a non-standard `aerospace.toml` — that path can't live inside the file it names.
+
+```sh
+AEROSPACE_CONFIG="$HOME/dotfiles/aerospace.toml"
+```
+
+The same names work as environment variables for a one-off: `AEROSPACE_GAP_DOCKED`, `AEROSPACE_GAP_NATIVE`, `AEROSPACE_GAP_KEY`, `AEROSPACE_DOCKED_MONITOR`, `AEROSPACE_CONFIG`.
+
+```console
+$ AEROSPACE_GAP_DOCKED=64 aerospace-gaps docked
+outer.top 40 -> 64 (config reloaded)
+```
 
 ## How docked is detected
 
 AeroSpace 0.20 exposes no monitor geometry — `list-monitors` can print a name but not a width — so detection is by **name**. Any monitor whose name does not look like an Apple panel (`Built-in`, `Color LCD`, `Liquid Retina`, `Sidecar`) counts as external, and one external display is enough to be docked.
 
-If that heuristic guesses wrong for your setup, name your display explicitly with a case-insensitive regex:
+If that heuristic guesses wrong for your setup, name your display explicitly:
 
-```sh
-AEROSPACE_DOCKED_MONITOR='ultragear|u2720q'
+```toml
+# aerospace-gaps: monitor = ultragear|dell u2720q
 ```
 
 `aerospace-gaps status` prints the names AeroSpace reports, which is what you want to match against. And `toggle` never detects anything, so it works regardless.
@@ -73,7 +99,7 @@ The rewrite only ever touches a line matching `^\s*<key> = <number>`, so comment
 ## Tests
 
 ```sh
-make test     # 14 checks against a stubbed CLI and a throwaway config
+make test     # 30 checks against a stubbed CLI and a throwaway config
 make lint     # shellcheck, if installed
 ```
 

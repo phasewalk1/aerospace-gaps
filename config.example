@@ -1,19 +1,19 @@
-# Copy to ~/.config/aerospace-gaps/config and edit.
-# Sourced as shell; environment variables take precedence over anything here.
-
-# outer.top when an external display is attached.
-AEROSPACE_GAP_DOCKED=40
-
-# outer.top when it is not.
-AEROSPACE_GAP_NATIVE=10
-
-# Which gap key to rewrite.
-#AEROSPACE_GAP_KEY=outer.top
+# Optional. Prefer putting gap values in your aerospace.toml as directives:
+#
+#   # aerospace-gaps: docked  = 40
+#   # aerospace-gaps: native  = 10
+#   # aerospace-gaps: monitor = ultragear|dell u2720q
+#   # aerospace-gaps: key     = outer.top
+#
+# Those outrank this file. Copy this to ~/.config/aerospace-gaps/config only
+# if you need settings that cannot live inside aerospace.toml itself, such as
+# where aerospace.toml is. Sourced as shell; environment variables win over it.
 
 # Where your AeroSpace config lives.
-#AEROSPACE_CONFIG="$HOME/.config/aerospace/aerospace.toml"
+#AEROSPACE_CONFIG="$HOME/dotfiles/aerospace.toml"
 
-# Optional case-insensitive regex identifying your external display by name.
-# Leave unset to treat any non-Apple panel as external. Run `aerospace-gaps
-# status` to see the names AeroSpace reports.
-#AEROSPACE_DOCKED_MONITOR='ultragear|u2720q'
+# Fallbacks, used when aerospace.toml declares no directives.
+#AEROSPACE_GAP_DOCKED=40
+#AEROSPACE_GAP_NATIVE=10
+#AEROSPACE_GAP_KEY=outer.top
+#AEROSPACE_DOCKED_MONITOR='ultragear|dell u2720q'

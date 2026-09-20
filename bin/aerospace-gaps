@@ -10,18 +10,34 @@
 #   aerospace-gaps status     print current/detected values, change nothing
 #   aerospace-gaps --version  print the version
 #
-# Configuration, in order of precedence: environment > config file > defaults.
+# Configuration, in order of precedence:
+#   environment > directives in aerospace.toml > config file > defaults
+#
+# Directives are comments in your aerospace.toml, one per line, anywhere in
+# the file, so your settings live alongside the gaps they describe:
+#
+#   # aerospace-gaps: docked  = 40
+#   # aerospace-gaps: native  = 10
+#   # aerospace-gaps: monitor = ultragear|dell u2720q
+#   # aerospace-gaps: key     = outer.top
+#
 # Config file: ${XDG_CONFIG_HOME:-~/.config}/aerospace-gaps/config (shell syntax)
 #
 #   AEROSPACE_CONFIG          path to aerospace.toml
-#   AEROSPACE_GAP_DOCKED      outer.top when an external display is attached
-#   AEROSPACE_GAP_NATIVE      outer.top when it is not
+#   AEROSPACE_GAP_DOCKED      the gap value when an external display is attached
+#   AEROSPACE_GAP_NATIVE      the gap value when it is not
 #   AEROSPACE_DOCKED_MONITOR  case-insensitive regex matched against monitor names
 #   AEROSPACE_GAP_KEY         the gap key to rewrite (default: outer.top)
 
 set -euo pipefail
 
-VERSION=1.0.0
+VERSION=1.1.0
+
+# Remember which values came from the environment; they outrank every file.
+ENV_DOCKED="${AEROSPACE_GAP_DOCKED:-}"
+ENV_NATIVE="${AEROSPACE_GAP_NATIVE:-}"
+ENV_MONITOR="${AEROSPACE_DOCKED_MONITOR:-}"
+ENV_KEY="${AEROSPACE_GAP_KEY:-}"
 
 XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 RC="$XDG_CONFIG_HOME/aerospace-gaps/config"
@@ -39,7 +55,38 @@ GAP_KEY="${AEROSPACE_GAP_KEY:-outer.top}"
 # Monitor names AeroSpace reports for Apple's own panels. Anything else is external.
 BUILTIN_MONITOR='built-?in|color lcd|liquid retina|sidecar'
 
+# Directive names found in aerospace.toml, for `status` to report.
+FROM_TOML=
+
 die() { printf 'aerospace-gaps: %s\n' "$*" >&2; exit 1; }
+
+# Read a `# aerospace-gaps: <name> = <value>` directive from the AeroSpace
+# config. The value is the rest of the line, trimmed, so regexes may contain
+# spaces and pipes. The first occurrence wins.
+directive() {
+  [[ -f $CONFIG ]] || return 0
+  sed -n "s/^[[:space:]]*#[[:space:]]*aerospace-gaps:[[:space:]]*$1[[:space:]]*=[[:space:]]*\\(.*\\)$/\\1/p" \
+    "$CONFIG" | head -n1 | sed 's/[[:space:]]*$//'
+}
+
+# Apply directives, then let any environment variable win back.
+load_directives() {
+  local v
+  v=$(directive docked);  [[ -n $v ]] && { DOCKED_TOP=$v;     FROM_TOML+=" docked"; }
+  v=$(directive native);  [[ -n $v ]] && { NATIVE_TOP=$v;     FROM_TOML+=" native"; }
+  v=$(directive monitor); [[ -n $v ]] && { DOCKED_MONITOR=$v; FROM_TOML+=" monitor"; }
+  v=$(directive key);     [[ -n $v ]] && { GAP_KEY=$v;        FROM_TOML+=" key"; }
+
+  [[ -n $ENV_DOCKED  ]] && DOCKED_TOP=$ENV_DOCKED
+  [[ -n $ENV_NATIVE  ]] && NATIVE_TOP=$ENV_NATIVE
+  [[ -n $ENV_MONITOR ]] && DOCKED_MONITOR=$ENV_MONITOR
+  [[ -n $ENV_KEY     ]] && GAP_KEY=$ENV_KEY
+
+  [[ $DOCKED_TOP =~ ^[0-9]+$ ]] || die "docked gap must be a whole number, got '$DOCKED_TOP'"
+  [[ $NATIVE_TOP =~ ^[0-9]+$ ]] || die "native gap must be a whole number, got '$NATIVE_TOP'"
+  [[ $GAP_KEY =~ ^[A-Za-z0-9._-]+$ ]] || die "gap key must be a TOML key, got '$GAP_KEY'"
+  return 0
+}
 
 # Escape the gap key for use in a POSIX basic regular expression.
 key_re() { printf '%s' "$GAP_KEY" | sed 's/[.[\*^$]/\\&/g'; }
@@ -99,7 +146,8 @@ set_top() {
 
 case "${1:-auto}" in
   -v|--version|-h|--help|help) ;;  # these need no config
-  *) [[ -f $CONFIG ]] || die "no AeroSpace config at $CONFIG" ;;
+  *) [[ -f $CONFIG ]] || die "no AeroSpace config at $CONFIG"
+     load_directives ;;
 esac
 
 case "${1:-auto}" in
@@ -115,7 +163,10 @@ case "${1:-auto}" in
     printf 'config:    %s\n' "$CONFIG"
     printf '%-10s %s (docked=%s native=%s)\n' "$GAP_KEY:" "$(current_top)" "$DOCKED_TOP" "$NATIVE_TOP"
     printf 'monitors:  %s\n' "$(monitors | paste -sd, -)"
-    printf 'detected:  %s\n' "$(detect_mode)" ;;
+    printf 'detected:  %s\n' "$(detect_mode)"
+    [[ -n $FROM_TOML ]] && printf 'from toml:%s\n' "$FROM_TOML"
+    [[ -n $DOCKED_MONITOR ]] && printf 'monitor:   %s\n' "$DOCKED_MONITOR"
+    true ;;
   -v|--version) echo "aerospace-gaps $VERSION" ;;
   -h|--help|help) sed -n '2,25p' "$0" | sed 's/^#\{1,\} \{0,1\}//' ;;
   *) die "unknown command '$1' (try: auto, docked, native, toggle, status)" ;;

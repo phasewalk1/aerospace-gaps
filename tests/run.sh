@@ -84,6 +84,75 @@ echo 'AEROSPACE_GAP_DOCKED=32' > "$XDG_CONFIG_HOME/aerospace-gaps/config"
 check "config file supplies defaults" "$(top)" "32"
 rm -f "$XDG_CONFIG_HOME/aerospace-gaps/config"
 
+# --- directives in aerospace.toml ---
+
+dfixture() {  # $1 = current outer.top, rest = directive lines
+  local top=$1; shift
+  { echo "[gaps]"
+    printf '%s\n' "$@"
+    echo "outer.top    = $top"
+    echo "outer.right =      8"
+  } > "$AEROSPACE_CONFIG"
+}
+
+dfixture 10 "# aerospace-gaps: docked = 64"; "$GAPS" docked >/dev/null
+check "toml directive sets the docked gap" "$(top)" "64"
+
+dfixture 40 "# aerospace-gaps: native = 4"; "$GAPS" native >/dev/null
+check "toml directive sets the native gap" "$(top)" "4"
+
+dfixture 10 "#aerospace-gaps:docked=64"; "$GAPS" docked >/dev/null
+check "directive tolerates missing whitespace" "$(top)" "64"
+
+dfixture 10 "  # aerospace-gaps:  docked  =  64  "; "$GAPS" docked >/dev/null
+check "directive tolerates extra whitespace" "$(top)" "64"
+
+dfixture 10 "# aerospace-gaps: docked = 64"
+AEROSPACE_GAP_DOCKED=99 "$GAPS" docked >/dev/null
+check "environment outranks a toml directive" "$(top)" "99"
+
+mkdir -p "$XDG_CONFIG_HOME/aerospace-gaps"
+echo 'AEROSPACE_GAP_DOCKED=32' > "$XDG_CONFIG_HOME/aerospace-gaps/config"
+dfixture 10 "# aerospace-gaps: docked = 64"; "$GAPS" docked >/dev/null
+check "toml directive outranks the config file" "$(top)" "64"
+rm -f "$XDG_CONFIG_HOME/aerospace-gaps/config"
+
+dfixture 10 "# aerospace-gaps: docked = 64"
+MONITORS="LG ULTRAGEAR" "$GAPS" auto >/dev/null
+check "auto honours directive values" "$(top)" "64"
+
+dfixture 10 "# aerospace-gaps: monitor = ultragear|dell u2720q"
+MONITORS="DELL U2720Q" "$GAPS" auto >/dev/null
+check "monitor directive regex with a space matches" "$(top)" "40"
+
+dfixture 10 "# aerospace-gaps: monitor = ultragear"
+MONITORS="DELL U2720Q" "$GAPS" auto >/dev/null
+check "monitor directive excludes a non-match" "$(top)" "10"
+
+{ echo "[gaps]"; echo "# aerospace-gaps: key = outer.bottom"
+  echo "outer.top    = 10"; echo "outer.bottom = 10"; } > "$AEROSPACE_CONFIG"
+"$GAPS" docked >/dev/null
+check "key directive redirects the rewrite" \
+  "$(sed -n 's/^outer\.bottom = \([0-9]*\)/\1/p' "$AEROSPACE_CONFIG")" "40"
+check "key directive leaves outer.top alone" "$(top)" "10"
+
+dfixture 10 "# aerospace-gaps: docked = 64" "# aerospace-gaps: docked = 99"
+"$GAPS" docked >/dev/null
+check "first directive wins over a later duplicate" "$(top)" "64"
+
+dfixture 10 "# aerospace-gaps: docked = wide"; out=$("$GAPS" docked 2>&1); rc=$?
+check "non-numeric directive is rejected" "$rc" "1"
+check "rejection names the bad value" \
+  "$(grep -c "whole number, got 'wide'" <<<"$out")" "1"
+
+dfixture 10 "# aerospace-gaps: key = outer.top; rm -rf /"; out=$("$GAPS" docked 2>&1); rc=$?
+check "directive values are never executed" "$rc" "1"
+
+dfixture 10 "# aerospace-gaps: docked = 64"; out=$(MONITORS="LG ULTRAGEAR" "$GAPS" status)
+check "status reports directive provenance" "$(grep -c 'from toml: docked' <<<"$out")" "1"
+
+# --- error handling ---
+
 fixture 10; "$GAPS" bogus >/dev/null 2>&1
 check "unknown command exits non-zero" "$?" "1"
 
